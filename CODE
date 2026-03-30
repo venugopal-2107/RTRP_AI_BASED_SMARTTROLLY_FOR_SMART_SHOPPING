@@ -1,0 +1,415 @@
+#include<ESP8266WiFi.h>
+#include<WiFiClient.h>
+#include<ESP8266WebServer.h>
+
+#include<LiquidCrystal_I2C.h>
+LiquidCrystal_I2C lcd(0x27, 16, 2);
+
+const char* ssid = "project05";//Replace with your network SSID
+const char* password = "project05";//Replace with your network password
+
+ESP8266WebServer server(80);
+
+#include<SoftwareSerial.h>
+SoftwareSerial rfid(D5,D6);
+String data=" ";
+String card_data=" ";
+
+String page = "";
+
+int p1=0,p2=0,p3=0,p4=0;
+int c1=0,c2=0,c3=0,c4=0;
+
+double total = 0;
+int count_prod = 0;
+
+#define sw D7
+int sense;
+
+#define buzzer D3
+
+#define mode D8
+int mode_sense;
+
+int card1=200;
+int card2=200;
+String pay_status="NOT PAID";
+
+bool a=false;
+
+void setup()
+{
+  pinMode(sw,INPUT_PULLUP);
+
+  pinMode(mode,INPUT_PULLUP);
+  
+  pinMode(buzzer,OUTPUT);
+  digitalWrite(buzzer,LOW);
+
+  pinMode(D0,OUTPUT);
+  digitalWrite(D0,LOW);
+
+  lcd.init();
+  lcd.backlight();
+  delay(100);
+
+  lcd.print("CONNECTING TO...");
+  lcd.setCursor(0,1);
+  lcd.print(ssid);
+  delay(1000);
+  
+  Serial.begin(9600);
+  rfid.begin(9600);
+  
+  WiFi.begin(ssid, password);
+
+  while (WiFi.status() != WL_CONNECTED)
+  {
+    delay(500);
+  }
+  Serial.print(WiFi.localIP());
+  lcd.clear();
+  lcd.print(" WIFI CONNECTED ");
+  lcd.setCursor(0, 1);
+  lcd.print(WiFi.localIP());
+  delay(5000);
+
+  lcd.clear();
+  lcd.print(" SMART SHOPPING ");
+  lcd.setCursor(0, 1);
+  lcd.print("  CART  SYSTEM  ");
+  delay(2000);
+  lcd.clear();
+  
+  lcd.setCursor(0, 0);
+  lcd.print(" PLZ ADD ITEMS     ");
+  lcd.setCursor(0, 1);
+  lcd.print("    TO CART          ");
+
+server.on("/", []()
+  {
+     page = "<html><head><title>E Cart using IoT</title></head><style type=\"text/css\">";
+    page += "table{border-collapse: collapse;}th {background-color:  #3498db ;color: white;}table,td {border: 4px solid black;font-size: x-large;";
+    page += "text-align:center;border-style: groove;border-color: rgb(255,0,0);}</style><body><center>";
+    page += "<h1>Smart Shopping Cart using IoT</h1><br><br><table style=\"width: 1200px;height: 450px;\"><tr>";
+    page += "<th>ITEMS</th><th>QUANTITY</th><th>COST</th></tr><tr><td>Biscuit</td><td>"+String(p1)+"</td><td>"+String(c1)+"</td></tr>";
+    page += "<tr><td>Soap</td><td>"+String(p2)+"</td><td>"+String(c2)+"</td></tr><tr><td>Rice(1KG)</td><td>"+String(p3)+"</td><td>"+String(c3)+"</td>";
+    page += "</tr><tr><td>Tea(50g)</td><td>"+String(p4)+"</td><td>"+String(c4)+"</td></tr><tr><th>Grand Total</th><th>"+String(count_prod)+"</th><th>"+String(total)+"</th>";
+    page += "</tr></table><br><input type=\"button\" name=\"Pay Now\" value=\"Pay Now\" style=\"width: 200px;height: 50px\">";
+    page += "<h2>PAYMENT STATUS : "+String(pay_status)+"</h2></center></body></html>";
+    page += "<meta http-equiv=\"refresh\" content=\"2\">";
+    server.send(200, "text/html", page);
+    });
+  server.begin();
+}
+void beep()
+{
+  digitalWrite(buzzer,HIGH);delay(500);digitalWrite(buzzer,LOW);delay(500);
+  digitalWrite(buzzer,HIGH);delay(500);digitalWrite(buzzer,LOW);delay(500);
+}
+void loop()
+{
+  sense=digitalRead(sw);
+  mode_sense=digitalRead(mode);
+
+  if(mode_sense == 1)
+  {
+    reacharge();
+  }
+  else
+  {
+    shopping(); 
+    pay_bill();
+
+    lcd.clear();
+    lcd.print("COUNT : ");lcd.print(count_prod);
+    lcd.setCursor(0,1);
+    lcd.print("PRICE : ");lcd.print(total);
+    digitalWrite(D0,LOW);delay(100);digitalWrite(D0,HIGH);delay(100);
+
+    if(pay_status=="PAID")
+    {
+      Serial.print(" TURN OFF CART ");
+      lcd.clear();
+      lcd.print(" TURN OFF CART ");
+      delay(2000);
+    }
+    else
+    {
+      Serial.print("WAITING FOR PAYMENT");
+    }
+    
+    server.handleClient();
+  }
+}
+void shopping()
+{
+  if (rfid.available()>0)
+  {
+    data=rfid.readString();
+    Serial.println(data);
+    
+      if ((data=="160057AD53BF") && (sense == 1))   //44371
+      {
+        lcd.clear();
+        lcd.print("Biscuit Added       ");
+        lcd.setCursor(0, 1);
+        lcd.print("Price(Rs):35.00      ");
+        p1++;
+        total = total + 35.00;
+        count_prod++;
+        beep();
+      }
+      else if ((data=="160057AD53BF") && (sense == 0))
+      {
+        if(p1>0)
+        {
+        lcd.clear();
+        lcd.print("Biscuit Removed!!!        ");
+        p1--;
+        total = total - 35.00;
+        count_prod--;
+        beep();
+        }
+        else
+        {
+        lcd.clear();
+        lcd.print("Not in cart!!!        ");
+        beep();
+        }
+      }
+      else if ((data=="1600728AFD13") && (sense == 1))   //35581
+      {
+        lcd.clear();
+        lcd.print("Soap Added          ");
+        lcd.setCursor(0, 1);
+        lcd.print("Price(Rs):38.00         ");
+        total = total + 38.00;
+        p2++;
+        count_prod++;
+        beep();
+      }
+      else if ((data=="1600728AFD13") && (sense == 0))
+      {
+         if(p2>0)
+        {
+        lcd.clear();
+        lcd.print("Soap Removed!!!        ");
+        p2--;
+        total = total - 38.00;
+        count_prod--;
+        beep();
+        }
+        else
+        {
+        lcd.clear();
+        lcd.print("Not in cart!!!        ");
+        beep();
+        }
+      }
+      else if ((data=="010068661916") && (sense == 1))   //26137
+      {
+        lcd.clear();
+        lcd.print("Rice(1KG) Added       ");
+        lcd.setCursor(0, 1);
+        lcd.print("Price(Rs):55.00      ");
+        total = total + 55.00;
+        count_prod++;
+        p3++;
+        beep();
+      }
+      else if ((data=="010068661916") && (sense == 0))
+      {
+        if(p3>0)
+        {
+        lcd.clear();
+        lcd.print("Rice(1KG) Removed!!!        ");
+        total = total - 55.00;
+        p3--;
+        count_prod--;
+        beep();
+        }
+        else
+        {
+        lcd.clear();
+        lcd.print("Not in cart!!!        ");
+        beep();
+        }
+      }
+      else if ((data=="160054779BAE") && (sense == 1))    //30619
+      {
+        lcd.clear();
+        lcd.print("Tea(50g) Added            ");
+        lcd.setCursor(0, 1);
+        lcd.print("Price(Rs):45.00        ");
+        total = total + 45.00;
+        count_prod++;
+        p4++;
+        beep();
+      }
+      else if ((data=="160054779BAE") && (sense == 0))
+      {
+        if(p4>0)
+        {
+        total = total - 45.00;
+        count_prod--;
+        p4--;
+        lcd.clear();
+        lcd.print("Tea(50g) Removed!!!        ");
+        beep();
+        }
+        else
+        {
+        lcd.clear();
+        lcd.setCursor(0, 0);
+        lcd.print("Not in cart!!!        ");
+        beep();
+        lcd.clear();
+        }
+      }
+    c1=p1*35.00;
+    c2=p2*38.00;
+    c3=p3*55.00;
+    c4=p4*45.00;
+  }
+}
+void pay_bill()
+{
+  if(data=="16004A87EE35")   //34798
+  {
+    beep();
+    data=" ";
+    if(card1>total)
+    {
+      pay_status="PAID";
+      card1=card1-total;
+      lcd.clear();
+      lcd.print("AMOUNT PAID : ");
+      lcd.setCursor(0,1);
+      lcd.print(total);
+      delay(2000);
+      lcd.clear();
+      lcd.print("CARD BALANCE : ");
+      lcd.setCursor(0,1);
+      lcd.print(card1);
+      delay(2000);
+      lcd.clear();
+      lcd.clear();
+      lcd.print(" PLEASE COLLECT ");
+      lcd.setCursor(0,1);
+      lcd.print(" YOUR EQUIPMENT ");
+      delay(5000); 
+    }
+    else
+    {
+      lcd.clear();
+      lcd.print("PLEASE RECHARGE");
+      lcd.setCursor(0,1);
+      lcd.print("   YOUR CARD   ");
+      delay(2000);
+      lcd.clear();
+    }
+  }
+  if(data=="15002CF006CF")  //61446
+  {
+    beep();
+    data=" ";
+    if(card2>total)
+    {
+      pay_status="PAID";
+      card2=card2-total;
+      lcd.clear();
+      lcd.print("AMOUNT PAID : ");
+      lcd.setCursor(0,1);
+      lcd.print(total);
+      delay(2000);
+      lcd.clear();
+      lcd.print("CARD BALANCE : ");
+      lcd.setCursor(0,1);
+      lcd.print(card2);
+      delay(2000);
+      lcd.clear();
+      lcd.clear();
+      lcd.print(" PLEASE COLLECT ");
+      lcd.setCursor(0,1);
+      lcd.print(" YOUR EQUIPMENT ");
+      delay(5000); 
+    }
+    else
+    {
+      lcd.clear();
+      lcd.print("PLEASE RECHARGE");
+      lcd.setCursor(0,1);
+      lcd.print("   YOUR CARD   ");
+      delay(2000);
+      lcd.clear();
+    }
+  }
+}
+void reacharge()
+{ 
+   lcd.clear();
+   lcd.print(" Reacharge Mode ");
+   lcd.setCursor(0,1);
+   lcd.print("Waiting for Card");
+   delay(100);
+
+   if(rfid.available()>0)
+   {
+     card_data=rfid.readString();
+     Serial.println(card_data);
+     a=false;
+   }
+  
+  if(card_data=="16004A87EE35"  && a==false)    // 34798
+  { 
+    beep();
+    
+    a=true;
+    card1=card1+500;
+  
+    lcd.clear();
+    lcd.print("Card number is");
+    lcd.setCursor(0,1);
+    lcd.print(card_data);
+    
+    lcd.clear();
+    lcd.print("Reacharge Done");
+    lcd.setCursor(0,1);
+    lcd.print("Amount Rs. 500");
+    delay(1000);
+    lcd.clear();
+
+    lcd.clear();
+    lcd.print("Total Balance :");
+    lcd.setCursor(0,1);
+    lcd.print("RS : ");lcd.print(card1);
+    delay(2000);
+    lcd.clear();
+  }
+  else if(card_data=="15002CF006CF"  && a==false)    // 61446
+  { 
+    beep();
+    a=true;
+    card2=card2+500;
+  
+    lcd.clear();
+    lcd.print("Card number is");
+    lcd.setCursor(0,1);
+    lcd.print(card_data);
+    
+    lcd.clear();
+    lcd.print("Reacharge Done");
+    lcd.setCursor(0,1);
+    lcd.print("Amount Rs. 500");
+    delay(1000);
+    lcd.clear();
+
+    lcd.clear();
+    lcd.print("Total Balance :");
+    lcd.setCursor(0,1);
+    lcd.print("RS : ");lcd.print(card2);
+    delay(2000);
+    lcd.clear();
+  }
+}
